@@ -84,7 +84,6 @@ def estimate_eta(order, partner, travel, now=0):
         }
 
     pickup = now + leg1 + partner.get('workload_minutes', 0)
-
     eta = pickup + order['prep_minutes'] + leg2
 
     return {
@@ -97,12 +96,122 @@ def estimate_eta(order, partner, travel, now=0):
 
 
 def assign_order(order, partners, travel, now=0):
+
+    order_id = order.get('order_id') if isinstance(order, dict) else None
+
+    def unassigned(reason):
+        return {
+            'order_id': order_id,
+            'partner_id': None,
+            'pickup_minutes': None,
+            'eta_minutes': None,
+            'reason': reason
+        }
+
+    if not isinstance(order, dict):
+        return unassigned('malformed order')
+
+    if not isinstance(partners, (list, tuple)):
+        return unassigned('invalid partners list')
+
+    if not isinstance(travel, dict):
+        return unassigned('invalid travel data')
+
+    if not _valid_id(order.get('order_id')):
+        return unassigned('invalid order ID')
+
+    if not _valid_id(order.get('restaurant_id')):
+        return unassigned('invalid restaurant ID')
+
+    if not _valid_id(order.get('destination_zone')):
+        return unassigned('invalid destination zone')
+
+    if not _valid_time(order.get('prep_minutes')):
+        return unassigned('invalid preparation time')
+
+    if not _valid_time(now):
+        return unassigned('invalid current time')
+
+    if not partners:
+        return unassigned('no partners available')
+
+    options = []
+    rejection_reasons = set()
+    partner_ids = set()
+
+    for partner in partners:
+
+        if not isinstance(partner, dict):
+            rejection_reasons.add('malformed partner')
+            continue
+
+        partner_id = partner.get('partner_id')
+
+        if not _valid_id(partner_id):
+            rejection_reasons.add('invalid partner ID')
+            continue
+
+        if partner_id in partner_ids:
+            rejection_reasons.add('duplicate partner ID')
+            continue
+
+        partner_ids.add(partner_id)
+
+        if partner.get('active') is not True:
+            rejection_reasons.add('inactive partner')
+            continue
+
+        capacity = partner.get('capacity')
+        active_orders = partner.get('active_order_ids')
+
+        if (
+            not isinstance(capacity, int)
+            or isinstance(capacity, bool)
+            or capacity < 0
+        ):
+            rejection_reasons.add('invalid partner capacity')
+            continue
+
+        if (
+            not isinstance(active_orders, list)
+            or any(not _valid_id(item) for item in active_orders)
+        ):
+            rejection_reasons.add('invalid active order list')
+            continue
+
+        if len(active_orders) >= capacity:
+            rejection_reasons.add('partner capacity reached')
+            continue
+
+        estimate = estimate_eta(order, partner, travel, now)
+
+        if not estimate['eligible']:
+            rejection_reasons.add(estimate['reason'])
+            continue
+
+        options.append(estimate)
+
+    if not options:
+        return unassigned(
+            'no eligible partner: ' + '; '.join(sorted(rejection_reasons))
+            if rejection_reasons
+            else 'no eligible partner'
+        )
+
+    chosen = min(
+        options,
+        key=lambda item: (
+            item['eta_minutes'],
+            item['partner_id']
+        )
+    )
+
     return {
-        'order_id': order.get('order_id') if isinstance(order, dict) else None,
-        'partner_id': None,
-        'pickup_minutes': None,
-        'eta_minutes': None,
-        'reason': 'assignment logic pending'
+        'order_id': order_id,
+        'partner_id': chosen['partner_id'],
+        'pickup_minutes': chosen['pickup_minutes'],
+        'eta_minutes': chosen['eta_minutes'],
+        'reason': 'assigned'
     }
 
 
