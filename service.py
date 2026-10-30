@@ -62,12 +62,20 @@ def estimate_eta(order, partner, travel, now=0):
     leg1_key = (partner['zone'], order['restaurant_id'])
     leg2_key = (order['restaurant_id'], order['destination_zone'])
 
-    if leg1_key not in travel or leg2_key not in travel:
+    if leg1_key not in travel:
         return {
             'partner_id': partner['partner_id'],
             'eta_minutes': None,
             'eligible': False,
-            'reason': 'missing travel data'
+            'reason': 'missing partner-to-restaurant travel data'
+        }
+
+    if leg2_key not in travel:
+        return {
+            'partner_id': partner['partner_id'],
+            'eta_minutes': None,
+            'eligible': False,
+            'reason': 'missing restaurant-to-customer travel data'
         }
 
     leg1 = travel[leg1_key]
@@ -125,7 +133,7 @@ def assign_order(order, partners, travel, now=0):
         return unassigned('invalid destination zone')
 
     if not _valid_time(order.get('prep_minutes')) or not _valid_time(now):
-        return unassigned('invalid time values')
+        return unassigned('invalid preparation or current time')
 
     options = []
     reasons = set()
@@ -185,13 +193,9 @@ def assign_order(order, partners, travel, now=0):
             if reasons else 'no eligible partner'
         )
 
-    # ETA ascending, followed by partner ID ascending.
     chosen = min(
         options,
-        key=lambda item: (
-            item['eta_minutes'],
-            item['partner_id']
-        )
+        key=lambda item: (item['eta_minutes'], item['partner_id'])
     )
 
     return {
