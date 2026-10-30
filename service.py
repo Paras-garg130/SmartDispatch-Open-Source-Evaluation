@@ -172,7 +172,10 @@ def assign_order(order, partners, travel, now=0):
             reasons.add('invalid partner capacity')
             continue
 
-        if not isinstance(active_orders, list):
+        if (
+            not isinstance(active_orders, list)
+            or any(not _valid_id(item) for item in active_orders)
+        ):
             reasons.add('invalid active order list')
             continue
 
@@ -208,4 +211,44 @@ def assign_order(order, partners, travel, now=0):
 
 
 def process_cancellation(partner, order_id, event_id):
-    return deepcopy(partner)
+
+    if not isinstance(partner, dict):
+        return deepcopy(partner)
+
+    out = deepcopy(partner)
+
+    if not _valid_id(order_id) or not _valid_id(event_id):
+        return out
+
+    if not isinstance(out.get('active_order_ids'), list):
+        return out
+
+    if not isinstance(out.get('processed_cancellation_ids'), list):
+        out['processed_cancellation_ids'] = []
+
+    if not isinstance(out.get('minutes_by_order'), dict):
+        return out
+
+    # Duplicate event: do nothing.
+    if event_id in out['processed_cancellation_ids']:
+        return out
+
+    # Record the event exactly once.
+    out['processed_cancellation_ids'].append(event_id)
+
+    if order_id not in out['active_order_ids']:
+        return out
+
+    released = out['minutes_by_order'].get(order_id, 0)
+    workload = out.get('workload_minutes')
+
+    if not _valid_time(released) or not _valid_time(workload):
+        return out
+
+    out['active_order_ids'].remove(order_id)
+
+    out['workload_minutes'] = max(0, workload - released)
+
+    out['minutes_by_order'].pop(order_id, None)
+
+    return out
