@@ -34,31 +34,31 @@ def estimate_eta(order, partner, travel, now=0):
             'reason': 'invalid travel data'
         }
 
-    if not _valid_id(order.get('order_id')):
-        reason = 'invalid order ID'
-    elif not _valid_id(order.get('restaurant_id')):
-        reason = 'invalid restaurant ID'
-    elif not _valid_id(order.get('destination_zone')):
-        reason = 'invalid destination zone'
-    elif not _valid_id(partner.get('partner_id')):
-        reason = 'invalid partner ID'
-    elif not _valid_id(partner.get('zone')):
-        reason = 'invalid partner zone'
-    elif not _valid_time(order.get('prep_minutes')):
-        reason = 'invalid preparation time'
-    elif not _valid_time(partner.get('workload_minutes', 0)):
-        reason = 'invalid workload time'
-    elif not _valid_time(now):
-        reason = 'invalid current time'
-    else:
-        reason = None
+    required_ids = [
+        order.get('order_id'),
+        order.get('restaurant_id'),
+        order.get('destination_zone'),
+        partner.get('partner_id'),
+        partner.get('zone')
+    ]
 
-    if reason:
+    if not all(_valid_id(value) for value in required_ids):
         return {
             'partner_id': partner.get('partner_id'),
             'eta_minutes': None,
             'eligible': False,
-            'reason': reason
+            'reason': 'invalid identifiers'
+        }
+
+    workload = partner.get('workload_minutes', 0)
+    prep = order.get('prep_minutes')
+
+    if not all(_valid_time(value) for value in (now, workload, prep)):
+        return {
+            'partner_id': partner.get('partner_id'),
+            'eta_minutes': None,
+            'eligible': False,
+            'reason': 'invalid time values'
         }
 
     leg1_key = (partner['zone'], order['restaurant_id'])
@@ -83,8 +83,9 @@ def estimate_eta(order, partner, travel, now=0):
             'reason': 'invalid travel time'
         }
 
-    pickup = now + leg1 + partner.get('workload_minutes', 0)
-    eta = pickup + order['prep_minutes'] + leg2
+    pickup = now + leg1 + workload
+
+    eta = pickup + prep + leg2
 
     return {
         'partner_id': partner['partner_id'],
@@ -132,9 +133,6 @@ def assign_order(order, partners, travel, now=0):
     if not _valid_time(now):
         return unassigned('invalid current time')
 
-    if not partners:
-        return unassigned('no partners available')
-
     options = []
     rejection_reasons = set()
     partner_ids = set()
@@ -172,10 +170,7 @@ def assign_order(order, partners, travel, now=0):
             rejection_reasons.add('invalid partner capacity')
             continue
 
-        if (
-            not isinstance(active_orders, list)
-            or any(not _valid_id(item) for item in active_orders)
-        ):
+        if not isinstance(active_orders, list):
             rejection_reasons.add('invalid active order list')
             continue
 
@@ -185,25 +180,20 @@ def assign_order(order, partners, travel, now=0):
 
         estimate = estimate_eta(order, partner, travel, now)
 
-        if not estimate['eligible']:
+        if estimate['eligible']:
+            options.append(estimate)
+        else:
             rejection_reasons.add(estimate['reason'])
-            continue
-
-        options.append(estimate)
 
     if not options:
         return unassigned(
             'no eligible partner: ' + '; '.join(sorted(rejection_reasons))
-            if rejection_reasons
-            else 'no eligible partner'
+            if rejection_reasons else 'no eligible partner'
         )
 
     chosen = min(
         options,
-        key=lambda item: (
-            item['eta_minutes'],
-            item['partner_id']
-        )
+        key=lambda item: (item['eta_minutes'], item['partner_id'])
     )
 
     return {
