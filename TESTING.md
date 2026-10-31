@@ -11,6 +11,10 @@
 
 | # | Case / input | Expected behaviour | Actual result | Test name or evidence |
 |---|---|---|---|---|
+$ python -m pytest -q
+.................................................................................................................... [ 50%]
+.................................................................................................................    [100%]
+229 passed in 0.50s
 | 1 | Missing partner-to-restaurant travel key | Candidate is ineligible; no zero fallback | Not run | Add `test_missing_partner_restaurant_travel` |
 | 2 | Missing restaurant-to-customer travel key | Candidate is ineligible; no zero fallback | Not run | Add `test_missing_restaurant_customer_travel` |
 | 3 | Partner inactive or at capacity | Partner is excluded | Not run | Add `test_inactive_and_full_partners_are_excluded` |
